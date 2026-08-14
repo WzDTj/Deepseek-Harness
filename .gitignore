@@ -1,0 +1,38 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode — build products
+.build/
+.build-xcode/
+.swiftpm/
+DerivedData/
+.dd/
+build/
+build-app/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Xcode — user & workspace state
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.pbxuser
+*.mode1v3
+*.mode2v3
+!default.pbxuser
+!default.mode1v3
+!default.mode2v3
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode instruments / profiling
+*.trace
+*.log
