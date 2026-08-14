@@ -11,6 +11,8 @@ DerivedData/
 .dd/
 build/
 build-app/
+dmg/
+dmg-src/
 *.ipa
 *.dSYM.zip
 *.dSYM
