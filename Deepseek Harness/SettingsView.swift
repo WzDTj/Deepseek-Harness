@@ -36,8 +36,11 @@ struct SettingsView: View {
             .padding(.vertical, 22)
         }
         .frame(width: 620, height: 680)
+        .ignoresSafeArea(.container, edges: .top)
+        .toolbar(removing: .title)
         .onAppear {
             syncDrafts()
+            WindowChrome.hideTitleBar(for: "Deepseek Harness Settings")
         }
         .confirmationDialog(
             "恢复默认设置？",

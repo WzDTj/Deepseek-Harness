@@ -1,6 +1,24 @@
+import AppKit
 import Combine
 import SwiftUI
 import WebKit
+
+@MainActor
+enum WindowChrome {
+    static func hideTitleBar(for windowTitle: String) {
+        DispatchQueue.main.async {
+            guard let window = NSApp.windows.first(where: { $0.title == windowTitle }) else {
+                return
+            }
+
+            window.styleMask.insert(.fullSizeContentView)
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.titlebarSeparatorStyle = .none
+            window.isMovableByWindowBackground = true
+        }
+    }
+}
 
 /// The main window: an embedded `WKWebView` pointed at the local `dsh web`
 /// address (http://127.0.0.1:<port>). The harness auto-starts when the window
@@ -12,8 +30,10 @@ struct ContentView: View {
     var body: some View {
         WebView(url: model.webURL)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .ignoresSafeArea(.container, edges: .top)
             .onAppear {
                 model.activate()
+                WindowChrome.hideTitleBar(for: "Deepseek Harness")
             }
             .alert("dsh 启动失败", isPresented: $model.showError) {
                 Button("确定", role: .cancel) {}
@@ -52,10 +72,12 @@ struct DeepseekHarnessApp: App {
         WindowGroup {
             ContentView()
         }
+        .windowStyle(.hiddenTitleBar)
         Settings {
             SettingsView()
                 .environmentObject(settings)
         }
+        .windowStyle(.hiddenTitleBar)
     }
 }
 
