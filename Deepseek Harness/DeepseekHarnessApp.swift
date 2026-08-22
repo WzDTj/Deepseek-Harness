@@ -46,10 +46,15 @@ struct WebView: NSViewRepresentable {
 @main
 struct DeepseekHarnessApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @StateObject private var settings = AppSettings.shared
 
     var body: some Scene {
         WindowGroup {
             ContentView()
+        }
+        Settings {
+            SettingsView()
+                .environmentObject(settings)
         }
     }
 }
@@ -74,7 +79,9 @@ final class AppModel: ObservableObject {
     @Published var webURL: URL?
 
     private let processManager = DshProcessManager.shared
+    private let settings = AppSettings.shared
     private var didActivate = false
+    private var cancellables = Set<AnyCancellable>()
 
     init() {
         processManager.onLog = { line in
@@ -85,6 +92,24 @@ final class AppModel: ObservableObject {
                 self?.render(state: self?.processManager.state ?? .idle)
             }
         }
+        // Seed the manager with the effective settings config and then keep it
+        // in sync when the user edits the Settings window.
+        processManager.reconfigure(buildConfig())
+
+        Publishers.MergeMany(
+            settings.$launchMode.map { _ in () }.eraseToAnyPublisher(),
+            settings.$port.map { _ in () }.eraseToAnyPublisher(),
+            settings.$autoPort.map { _ in () }.eraseToAnyPublisher(),
+            settings.$dshPath.map { _ in () }.eraseToAnyPublisher(),
+            settings.$nodePath.map { _ in () }.eraseToAnyPublisher(),
+            settings.$sourcePath.map { _ in () }.eraseToAnyPublisher(),
+            settings.$pnpmPath.map { _ in () }.eraseToAnyPublisher()
+        )
+        .debounce(for: .milliseconds(150), scheduler: DispatchQueue.main)
+        .sink { [weak self] _ in
+            self?.applySettings()
+        }
+        .store(in: &cancellables)
     }
 
     /// Called when the window appears: ensure the harness is running once.
@@ -92,6 +117,36 @@ final class AppModel: ObservableObject {
         guard !didActivate else { return }
         didActivate = true
         processManager.startIfNeeded()
+    }
+
+    /// Build a harness `Config` from the current settings; already applied /
+    /// default values produce the same config so reconfiguration is skipped.
+    private var lastAppliedConfig: DshProcessManager.Config?
+
+    /// Translate the current `AppSettings` into a harness `Config`.
+    private func buildConfig() -> DshProcessManager.Config {
+        var cfg = DshProcessManager.Config()
+        cfg.launchMode = settings.resolvedLaunchMode
+        cfg.autoPort = settings.resolvedAutoPort
+        cfg.port = settings.resolvedPort
+        cfg.dshPathOverride = settings.resolvedDshPath
+        cfg.nodePathOverride = settings.resolvedNodePath
+        cfg.sourcePathOverride = settings.resolvedSourcePath
+        cfg.pnpmPathOverride = settings.resolvedPnpmPath
+        return cfg
+    }
+
+    /// Push the current settings into the running harness (restarting it if
+    /// needed) and make sure it's up once the app is active.
+    private func applySettings() {
+        let cfg = buildConfig()
+        // Skip the no-op initial/config-equivalent emissions.
+        if cfg == lastAppliedConfig { return }
+        lastAppliedConfig = cfg
+        processManager.reconfigure(cfg)
+        if didActivate {
+            processManager.startIfNeeded()
+        }
     }
 
     private func render(state: DshProcessManager.State) {

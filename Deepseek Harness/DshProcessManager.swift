@@ -1,12 +1,11 @@
 import Foundation
 import Darwin
 
-/// Manages the lifecycle of a child `dsh --profile web` process and exposes
+/// Manages the lifecycle of a child Harness web process and exposes
 /// the loopback URL once the web server is ready.
 ///
-/// The app-shell relies on a **local**, non-self-contained `dsh` install:
-/// the child process is launched through the user's shell PATH (which GUI apps
-/// do not inherit, so we resolve it explicitly). `DSH_HOME` is not set here so
+/// The app-shell supports both a local installed `dsh` and the official
+/// source-repository command `pnpm dsh web`. `DSH_HOME` is not set here so
 /// ordering stays as-documented: user config layers plus dsh's built-in `web`
 /// profile template are used.
 ///
@@ -18,13 +17,24 @@ import Darwin
 /// default host pinned to `127.0.0.1` (`--host 0.0.0.0` is rejected by dsh).
 final class DshProcessManager {
 
-    struct Config {
+    struct Config: Equatable {
         var port: Int = DshProcessManager.defaultPort
         var host: String = "127.0.0.1"
-        /// Extra arguments appended to the `dsh --profile web` invocation.
+        /// Launch the installed CLI or the official source checkout.
+        var launchMode: DshLaunchMode = .installed
+        /// Extra arguments appended to the configured web invocation.
         var extraArgs: [String] = []
         /// Use `--port 0` and parse the real port back from stdout.
         var autoPort: Bool = false
+        /// Explicit `dsh` path override. `nil` = auto-detect (env `DSH_BIN`,
+        /// then PATH/npx/mise/Homebrew discovery).
+        var dshPathOverride: String?
+        /// Explicit `node` path override. `nil` = auto-detect.
+        var nodePathOverride: String?
+        /// Official DeepSeek Harness source checkout root.
+        var sourcePathOverride: String?
+        /// Explicit `pnpm` path override for source mode. `nil` = auto-detect.
+        var pnpmPathOverride: String?
     }
 
     enum State: Equatable {
@@ -38,6 +48,8 @@ final class DshProcessManager {
 
     enum DshError: LocalizedError {
         case notFound(String)
+        case sourceNotFound(String)
+        case pnpmNotFound(String)
         case launchFailed(String)
         case timedOut
 
@@ -45,6 +57,10 @@ final class DshProcessManager {
             switch self {
             case .notFound(let hint):
                 return "找不到可用的 dsh 命令。\(hint)"
+            case .sourceNotFound(let detail):
+                return "源码目录不可用：\(detail)"
+            case .pnpmNotFound(let hint):
+                return "找不到可用的 pnpm 命令。\(hint)"
             case .launchFailed(let detail):
                 return "无法启动 dsh web：\(detail)"
             case .timedOut:
@@ -69,6 +85,57 @@ final class DshProcessManager {
 
     private(set) var config: Config
     var port: Int { config.port }
+
+    // MARK: - Settings diagnostics
+
+    /// Human-readable state about which runtime paths would be used right now.
+    /// Used by the Settings window to preview resolution without launching.
+    struct ResolutionPreview {
+        var launchMode: DshLaunchMode = .installed
+        var dshPath: String?
+        var nodePath: String?
+        var sourcePath: String?
+        var pnpmPath: String?
+        var dshError: String?
+        var sourceError: String?
+        var pnpmError: String?
+    }
+
+    /// Resolve the configured runtime paths purely for display. Used by the Settings window
+    /// to preview resolution without launching. Call from the main actor; this
+    /// may briefly probe the shell PATH.
+    func resolutionPreview(
+        launchMode: DshLaunchMode,
+        overrideSource: String?,
+        overrideDsh: String?,
+        overridePnpm: String?,
+        overrideNode: String?
+    ) -> ResolutionPreview {
+        var preview = ResolutionPreview()
+        preview.launchMode = launchMode
+        preview.nodePath = Self.resolveNode(override: overrideNode)?.path
+
+        switch launchMode {
+        case .installed:
+            do {
+                preview.dshPath = try Self.resolveDshPath(javaScriptOK: true, override: overrideDsh).path
+            } catch {
+                preview.dshError = error.localizedDescription
+            }
+        case .source:
+            do {
+                preview.sourcePath = try Self.resolveSourcePath(override: overrideSource).path
+            } catch {
+                preview.sourceError = error.localizedDescription
+            }
+            do {
+                preview.pnpmPath = try Self.resolvePnpmPath(override: overridePnpm).path
+            } catch {
+                preview.pnpmError = error.localizedDescription
+            }
+        }
+        return preview
+    }
 
     // MARK: - Internals
 
@@ -115,7 +182,12 @@ final class DshProcessManager {
 
         let (runtime, url) = try prepareLaunch()
         transition(.starting)
-        launch(executable: runtime.executableURL, arguments: runtime.arguments, path: runtime.path)
+        launch(
+            executable: runtime.executableURL,
+            arguments: runtime.arguments,
+            path: runtime.path,
+            workingDirectory: runtime.workingDirectory
+        )
 
         if let url {
             // Without auto-port we don't need to parse stdout; poll health only.
@@ -130,6 +202,30 @@ final class DshProcessManager {
     /// Non-throwing convenience wrapper.
     func startIfNeeded() {
         if case .ready = state { return }
+        do { _ = try start() } catch {
+            transition(.failed(error.localizedDescription))
+        }
+    }
+
+    /// Apply a new configuration and, if the harness is already running,
+    /// tear it down (suppressing the watchdog) so the intended restart picks
+    /// up the new settings immediately.
+    func reconfigure(_ newConfig: Config) {
+        let running = {
+            switch state {
+            case .starting, .ready, .restarting: return true
+            case .idle, .failed: return false
+            }
+        }()
+        self.config = newConfig
+        guard running else {
+            // Not running: keep the current state (e.g. `.failed` still shown)
+            // but from now on start() builds with the new config.
+            return
+        }
+        // Stop quietly so the termination handler won't schedule a restart.
+        stopQuietly()
+        transition(.starting)
         do { _ = try start() } catch {
             transition(.failed(error.localizedDescription))
         }
@@ -165,11 +261,23 @@ final class DshProcessManager {
         let arguments: [String]
         /// PATH to hand the child (includes `node` when we exec a JS entry).
         let path: String
+        /// Source checkout used as cwd by the official `pnpm dsh web` command.
+        let workingDirectory: URL?
     }
 
-    /// Resolve the `dsh` binary from the login/PATH shell and build args.
+    /// Build the configured installed-CLI or source-checkout command.
     private func prepareLaunch() throws -> (Runtime, URL?) {
-        let dsh = try Self.resolveDshPath(javaScriptOK: true)
+        switch config.launchMode {
+        case .installed:
+            return try prepareInstalledLaunch()
+        case .source:
+            return try prepareSourceLaunch()
+        }
+    }
+
+    /// Resolve the installed `dsh` binary from the login/PATH shell and build args.
+    private func prepareInstalledLaunch() throws -> (Runtime, URL?) {
+        let dsh = try Self.resolveDshPath(javaScriptOK: true, override: config.dshPathOverride)
         let portArg = autoPort ? ["--port", "0"] : ["--port", String(config.port)]
         let args = ["--profile", "web", "--host", config.host] + portArg + config.extraArgs
 
@@ -180,7 +288,7 @@ final class DshProcessManager {
         // If dsh is a node script (npx shim or lib/bin.js), exec it via node
         // so we never depend on the child PATH resolving `env node`.
         if Self.isJavaScriptEntry(dsh.resolvingSymlinksInPath()) {
-            if let node = Self.resolveNode() {
+            if let node = Self.resolveNode(override: config.nodePathOverride) {
                 executable = node
                 // Pass the resolved script path (e.g. .../lib/bin.js) to node.
                 execArgs = [dsh.resolvingSymlinksInPath().path] + args
@@ -201,12 +309,60 @@ final class DshProcessManager {
         // With auto-port the real URL is unknown until stdout arrives.
         let knownURL = autoPort ? nil : URL(string: "http://\(config.host):\(config.port)")!
 
-        let runtime = Runtime(executableURL: executable, arguments: execArgs, path: pathDirs.joined(separator: ":"))
+        let runtime = Runtime(
+            executableURL: executable,
+            arguments: execArgs,
+            path: pathDirs.joined(separator: ":"),
+            workingDirectory: nil
+        )
         return (runtime, knownURL)
     }
 
-    /// Locate a usable `node` from env / npx shim / mise / homebrew.
-    private static func resolveNode() -> URL? {
+    /// Launch the official source checkout command from its repository root:
+    /// `pnpm dsh web`. Dependencies must already be installed and the source
+    /// tree must already be built, matching the upstream development setup.
+    private func prepareSourceLaunch() throws -> (Runtime, URL?) {
+        let source = try Self.resolveSourcePath(override: config.sourcePathOverride)
+        let pnpm = try Self.resolvePnpmPath(override: config.pnpmPathOverride)
+        guard let node = Self.resolveNode(override: config.nodePathOverride) else {
+            throw DshError.notFound(
+                "源码模式需要 Node.js 才能运行 pnpm 和 Harness。请安装 Node.js，"
+                + "或把 node 所在目录加入 PATH。"
+            )
+        }
+
+        let portArg = autoPort ? ["--port", "0"] : ["--port", String(config.port)]
+        // `pnpm dsh web` is the upstream source-run entry. `--no-open` keeps
+        // the browser inside this app's WKWebView instead of opening Safari.
+        let args = ["dsh", "web", "--no-open", "--host", config.host] + portArg + config.extraArgs
+
+        var executable = pnpm
+        var execArgs = args
+        if Self.isJavaScriptEntry(pnpm.resolvingSymlinksInPath()) {
+            executable = node
+            execArgs = [pnpm.resolvingSymlinksInPath().path] + args
+        }
+
+        var pathDirs = [node.deletingLastPathComponent().path, pnpm.deletingLastPathComponent().path]
+        pathDirs.append(contentsOf: ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"])
+
+        let knownURL = autoPort ? nil : URL(string: "http://\(config.host):\(config.port)")!
+        let runtime = Runtime(
+            executableURL: executable,
+            arguments: execArgs,
+            path: pathDirs.joined(separator: ":"),
+            workingDirectory: source
+        )
+        return (runtime, knownURL)
+    }
+
+    /// Locate a usable `node` from an explicit override, env, or PATH/mise/
+    /// nvm/homebrew discovery.
+    private static func resolveNode(override: String? = nil) -> URL? {
+        if let override, !override.isEmpty,
+           FileManager.default.isExecutableFile(atPath: override) {
+            return URL(fileURLWithPath: override)
+        }
         if let n = ProcessInfo.processInfo.environment["DSH_NODE_BIN"], !n.isEmpty,
            FileManager.default.isExecutableFile(atPath: n) {
             return URL(fileURLWithPath: n)
@@ -232,14 +388,71 @@ final class DshProcessManager {
         return nil
     }
 
-    /// Resolve the `dsh` executable, handling both real binaries and the
-    /// npm-style `node_modules/.bin` script shims (symlinks into the installed
-    /// package). Returns the URL to actually exec: if `DSH_BIN` or discovery
-    /// points at a JS script, we exec it via `node`.
-    private static func resolveDshPath(javaScriptOK: Bool = false) throws -> URL {
+    /// Resolve the selected source checkout and make sure it is the upstream
+    /// repository root rather than an arbitrary child directory.
+    private static func resolveSourcePath(override: String?) throws -> URL {
+        guard let raw = override?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else {
+            throw DshError.sourceNotFound(
+                "请在设置中选择 DeepSeek Harness 源码仓库根目录（应包含 package.json）。"
+            )
+        }
+
+        let url = URL(fileURLWithPath: raw).standardizedFileURL.resolvingSymlinksInPath()
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            throw DshError.sourceNotFound("目录不存在：\(raw)")
+        }
+
+        let packageJSON = url.appendingPathComponent("package.json")
+        guard FileManager.default.fileExists(atPath: packageJSON.path) else {
+            throw DshError.sourceNotFound("目录中找不到 package.json：\(url.path)")
+        }
+        return url
+    }
+
+    /// Resolve pnpm for the official source command. GUI apps do not inherit
+    /// the user's interactive PATH, so inspect the same toolchain locations
+    /// used by the installed dsh resolver and then probe a login shell.
+    private static func resolvePnpmPath(override: String? = nil) throws -> URL {
+        if let override, !override.isEmpty {
+            let p = URL(fileURLWithPath: override)
+            if exists(p, allowScript: true) { return p }
+        }
+        if let env = ProcessInfo.processInfo.environment["DSH_PNPM_BIN"], !env.isEmpty {
+            let p = URL(fileURLWithPath: env)
+            if exists(p, allowScript: true) { return p }
+        }
+        for dir in candidateBinDirs() {
+            let p = URL(fileURLWithPath: dir).appendingPathComponent("pnpm")
+            if exists(p, allowScript: true) { return p }
+        }
+        if let out = runShellCapture("/bin/zsh", "command -v pnpm") {
+            let p = out.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !p.isEmpty {
+                let url = URL(fileURLWithPath: p)
+                if exists(url, allowScript: true) { return url }
+            }
+        }
+        throw DshError.pnpmNotFound(
+            "源码模式按官方方式需要 pnpm。请安装 pnpm，或通过设置/环境变量 DSH_PNPM_BIN 指定其绝对路径。"
+        )
+    }
+
+    /// Resolve the `dsh` executable, handling an explicit override, the
+    /// environment, and both real binaries and the npm-style
+    /// `node_modules/.bin` script shims (symlinks into the installed package).
+    /// Returns the URL to actually exec: if `DSH_BIN` or discovery points at a
+    /// JS script, we exec it via `node`.
+    private static func resolveDshPath(javaScriptOK: Bool = false, override: String? = nil) throws -> URL {
+        if let override, !override.isEmpty {
+            let p = URL(fileURLWithPath: override)
+            if exists(p, allowScript: javaScriptOK) { return p }
+        }
         if let env = ProcessInfo.processInfo.environment["DSH_BIN"], !env.isEmpty {
             let p = URL(fileURLWithPath: env)
-            if exists(p) { return p }
+            if exists(p, allowScript: javaScriptOK) { return p }
         }
         // GUI apps under launchd do not inherit shell PATH. Probe login-shell
         // PATHs, then common package-manager bin dirs, then npx install roots.
@@ -350,7 +563,7 @@ final class DshProcessManager {
 
     // MARK: - Launch
 
-    private func launch(executable: URL, arguments: [String], path: String) {
+    private func launch(executable: URL, arguments: [String], path: String, workingDirectory: URL?) {
         let p = Process()
         p.executableURL = executable
         p.arguments = arguments
@@ -360,6 +573,11 @@ final class DshProcessManager {
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = path
         p.environment = env
+        // Source mode must run from the repository root so pnpm resolves the
+        // workspace-local `dsh` package exactly as in the official command.
+        if let workingDirectory {
+            p.currentDirectoryURL = workingDirectory
+        }
 
         let out = Pipe()
         let err = Pipe()

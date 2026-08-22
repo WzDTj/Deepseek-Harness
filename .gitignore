@@ -38,3 +38,6 @@ Package.resolved
 # Xcode instruments / profiling
 *.trace
 *.log
+
+# vendored upstream harness source for workspace multi-dir work
+dsh-src/
