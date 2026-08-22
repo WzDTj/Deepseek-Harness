@@ -7,13 +7,13 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		DE29C4AB302EAB5C003F1F86 /* Deepseek Harness.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Deepseek Harness.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		DE29C4AB302EAB5C003F1F86 /* DeepSeek Harness Desktop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "DeepSeek Harness Desktop.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		DE29C4AD302EAB5C003F1F86 /* Deepseek Harness */ = {
+		DE29C4AD302EAB5C003F1F86 /* DeepSeek Harness Desktop */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "Deepseek Harness";
+			path = "DeepSeek Harness Desktop";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -32,7 +32,7 @@
 		DE29C4A2302EAB5C003F1F86 = {
 			isa = PBXGroup;
 			children = (
-				DE29C4AD302EAB5C003F1F86 /* Deepseek Harness */,
+				DE29C4AD302EAB5C003F1F86 /* DeepSeek Harness Desktop */,
 				DE29C4AC302EAB5C003F1F86 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -40,7 +40,7 @@
 		DE29C4AC302EAB5C003F1F86 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				DE29C4AB302EAB5C003F1F86 /* Deepseek Harness.app */,
+				DE29C4AB302EAB5C003F1F86 /* DeepSeek Harness Desktop.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -48,9 +48,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		DE29C4AA302EAB5C003F1F86 /* Deepseek Harness */ = {
+		DE29C4AA302EAB5C003F1F86 /* DeepSeek Harness Desktop */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = DE29C4B6302EAB5D003F1F86 /* Build configuration list for PBXNativeTarget "Deepseek Harness" */;
+			buildConfigurationList = DE29C4B6302EAB5D003F1F86 /* Build configuration list for PBXNativeTarget "DeepSeek Harness Desktop" */;
 			buildPhases = (
 				DE29C4A7302EAB5C003F1F86 /* Sources */,
 				DE29C4A8302EAB5C003F1F86 /* Frameworks */,
@@ -61,13 +61,13 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				DE29C4AD302EAB5C003F1F86 /* Deepseek Harness */,
+				DE29C4AD302EAB5C003F1F86 /* DeepSeek Harness Desktop */,
 			);
-			name = "Deepseek Harness";
+			name = "DeepSeek Harness Desktop";
 			packageProductDependencies = (
 			);
-			productName = "Deepseek Harness";
-			productReference = DE29C4AB302EAB5C003F1F86 /* Deepseek Harness.app */;
+			productName = "DeepSeek Harness Desktop";
+			productReference = DE29C4AB302EAB5C003F1F86 /* DeepSeek Harness Desktop.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -85,7 +85,7 @@
 					};
 				};
 			};
-			buildConfigurationList = DE29C4A6302EAB5C003F1F86 /* Build configuration list for PBXProject "Deepseek Harness" */;
+			buildConfigurationList = DE29C4A6302EAB5C003F1F86 /* Build configuration list for PBXProject "DeepSeek Harness Desktop" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -99,7 +99,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				DE29C4AA302EAB5C003F1F86 /* Deepseek Harness */,
+				DE29C4AA302EAB5C003F1F86 /* DeepSeek Harness Desktop */,
 			);
 		};
 /* End PBXProject section */
@@ -310,7 +310,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		DE29C4A6302EAB5C003F1F86 /* Build configuration list for PBXProject "Deepseek Harness" */ = {
+		DE29C4A6302EAB5C003F1F86 /* Build configuration list for PBXProject "DeepSeek Harness Desktop" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				DE29C4B4302EAB5D003F1F86 /* Debug */,
@@ -319,7 +319,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		DE29C4B6302EAB5D003F1F86 /* Build configuration list for PBXNativeTarget "Deepseek Harness" */ = {
+		DE29C4B6302EAB5D003F1F86 /* Build configuration list for PBXNativeTarget "DeepSeek Harness Desktop" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				DE29C4B7302EAB5D003F1F86 /* Debug */,

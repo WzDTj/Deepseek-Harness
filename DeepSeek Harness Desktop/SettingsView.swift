@@ -40,7 +40,7 @@ struct SettingsView: View {
         .toolbar(removing: .title)
         .onAppear {
             syncDrafts()
-            WindowChrome.hideTitleBar(for: "Deepseek Harness Settings")
+            WindowChrome.hideTitleBar(for: "DeepSeek Harness Desktop Settings")
         }
         .confirmationDialog(
             "恢复默认设置？",

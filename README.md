@@ -1,4 +1,4 @@
-# Deepseek Harness（macOS App）
+# DeepSeek Harness Desktop（macOS App）
 
 ## 背景
 
@@ -35,7 +35,7 @@ export DSH_BIN="$HOME/.npm/_npx/<hash>/node_modules/.bin/dsh"
 
 ### 设置窗口（推荐）
 
-从菜单 **Deepseek Harness › 设置…**（`⌘,`）打开“运行环境”设置页，可以在同一页完成：
+从菜单 **DeepSeek Harness Desktop › 设置…**（`⌘,`）打开“运行环境”设置页，可以在同一页完成：
 
 - 选择“已安装 dsh”或“源码运行”；源码运行时选择仓库根目录，App 会按官方方式执行
   `pnpm dsh web`。

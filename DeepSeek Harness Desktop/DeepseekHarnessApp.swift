@@ -33,7 +33,7 @@ struct ContentView: View {
             .ignoresSafeArea(.container, edges: .top)
             .onAppear {
                 model.activate()
-                WindowChrome.hideTitleBar(for: "Deepseek Harness")
+                WindowChrome.hideTitleBar(for: "DeepSeek Harness Desktop")
             }
             .alert("dsh 启动失败", isPresented: $model.showError) {
                 Button("确定", role: .cancel) {}
